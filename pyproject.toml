@@ -3,7 +3,7 @@ name = "fooble"
 version = "0.1.0"
 description = "Unofficial Claude plugin to discover recipes on fooby.ch"
 readme = "README.md"
-license = "0BSD"
+license = "AGPL-3.0-or-later"
 requires-python = "==3.11.16"
 dependencies = [
     "httpx==0.28.1",
