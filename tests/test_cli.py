@@ -14,6 +14,7 @@ def test_help_lists_subcommands(capsys):
     assert "usage: fooble" in out
     assert "crawl" in out
     assert "extract" in out
+    assert "index" in out
 
 
 def test_extract_writes_recipe_json(tmp_path: Path, fixtures: Path):
@@ -27,3 +28,12 @@ def test_extract_reports_failures(tmp_path: Path):
     (tmp_path / "html").mkdir()
     (tmp_path / "html" / "1.html").write_text("<html></html>")
     assert main(["--data-dir", str(tmp_path), "extract"]) == 1
+
+
+def test_index_builds_database(tmp_path: Path, fixtures: Path, capsys):
+    (tmp_path / "html").mkdir()
+    (tmp_path / "html" / "1001.html").write_bytes((fixtures / "1001.html").read_bytes())
+    assert main(["--data-dir", str(tmp_path), "extract"]) == 0
+    assert main(["--data-dir", str(tmp_path), "index"]) == 0
+    assert (tmp_path / "fooble.db").exists()
+    assert "indexed 1 recipes" in capsys.readouterr().err

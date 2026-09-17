@@ -34,6 +34,7 @@ Requires [uv](https://docs.astral.sh/uv/) 0.12.15; it installs the pinned Python
 uv sync
 uv run fooble crawl --limit 200   # omit --limit for everything
 uv run fooble extract
+uv run fooble index
 ```
 
 All commands accept `--data-dir` (default `./data`).

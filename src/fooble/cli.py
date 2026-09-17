@@ -22,6 +22,8 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("extract", help="parse cached HTML into recipe JSON")
     p.add_argument("--id", type=int, action="append", dest="ids")
 
+    sub.add_parser("index", help="build the SQLite index from recipe JSON")
+
     args = parser.parse_args(argv)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
@@ -43,4 +45,9 @@ def main(argv: list[str] | None = None) -> int:
         ok, failed = extract_all(args.data_dir, args.ids)
         print(f"extracted {ok}, failed {failed}", file=sys.stderr)
         return 1 if failed else 0
+    if args.cmd == "index":
+        from .index import build_index
+
+        n = build_index(args.data_dir)
+        print(f"indexed {n} recipes", file=sys.stderr)
     return 0
