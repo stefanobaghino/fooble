@@ -1,0 +1,22 @@
+[Unit]
+Description=fooble MCP server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=fooble
+Group=fooble
+WorkingDirectory=/opt/fooble/app
+ExecStart=/opt/fooble/app/.venv/bin/fooble --data-dir /opt/fooble/data serve --host 0.0.0.0 --port 8000
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadOnlyPaths=/opt/fooble/app
+ReadWritePaths=/opt/fooble/data
+
+[Install]
+WantedBy=multi-user.target
