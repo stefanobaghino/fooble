@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "fooble": {
+      "type": "http",
+      "url": "${FOOBLE_MCP_URL:-http://localhost:8000/mcp}"
+    }
+  }
+}

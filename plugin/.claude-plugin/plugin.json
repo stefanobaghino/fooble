@@ -1,0 +1,14 @@
+{
+  "name": "fooble",
+  "version": "0.1.0",
+  "description": "Discover fooby.ch recipes by ingredient through a fooble MCP server.",
+  "author": {
+    "name": "Stefano Baghino",
+    "url": "https://github.com/stefanobaghino"
+  },
+  "repository": "https://github.com/stefanobaghino/fooble",
+  "license": "AGPL-3.0-or-later",
+  "keywords": ["recipes", "cooking", "fooby", "mcp"],
+  "mcpServers": "./.mcp.json",
+  "skills": "./skills/"
+}
