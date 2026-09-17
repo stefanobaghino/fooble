@@ -1,6 +1,7 @@
 # fooble
 
-Unofficial Claude plugin to discover recipes on [fooby.ch](https://fooby.ch).
+Crawler, index and MCP server for [fooby.ch](https://fooby.ch) recipes, plus an
+unofficial Claude plugin that uses them.
 
 fooble crawls the English recipe pages, extracts their structured data into a
 local SQLite index, and serves that index to Claude over
