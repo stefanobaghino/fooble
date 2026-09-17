@@ -18,7 +18,7 @@ tomatoes and garlic but no onion, under an hour".
 
 ## Usage
 
-Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/).
+Requires [uv](https://docs.astral.sh/uv/) 0.12.15; it installs the pinned Python interpreter on first `uv sync`.
 
 ```sh
 uv sync
