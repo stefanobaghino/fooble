@@ -1,7 +1,7 @@
 [project]
 name = "fooble"
 version = "0.1.0"
-description = "Unofficial Claude plugin to discover recipes on fooby.ch"
+description = "Crawler, index and MCP server for fooby.ch recipes"
 readme = "README.md"
 license = "AGPL-3.0-or-later"
 requires-python = "==3.11.16"
