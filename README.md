@@ -20,6 +20,12 @@ tomatoes and garlic but no onion, under an hour".
 The crawler honours fooby's `robots.txt` (`Crawl-delay: 10`), so a full crawl
 of ~8,300 recipes takes about a day. It is resumable: cached pages are skipped.
 
+Extraction reads the schema.org `Recipe` JSON-LD block plus fooby's
+portion-calculator ingredient data. Ingredient names are normalized to
+canonical singular nouns via `src/fooble/aliases.toml`; names that no alias
+matches are listed in `data/unmatched.tsv` after each extraction so the map
+can grow.
+
 ## Usage
 
 Requires [uv](https://docs.astral.sh/uv/) 0.12.15; it installs the pinned Python interpreter on first `uv sync`.
@@ -27,6 +33,7 @@ Requires [uv](https://docs.astral.sh/uv/) 0.12.15; it installs the pinned Python
 ```sh
 uv sync
 uv run fooble crawl --limit 200   # omit --limit for everything
+uv run fooble extract
 ```
 
 All commands accept `--data-dir` (default `./data`).
@@ -37,3 +44,5 @@ All commands accept `--data-dir` (default `./data`).
 uv run pytest
 uv run ruff check . && uv run ruff format --check .
 ```
+
+Tests run offline against fixtures in `tests/fixtures`.

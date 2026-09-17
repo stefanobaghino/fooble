@@ -19,6 +19,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--refresh", action="store_true", help="refetch cached pages too")
     p.add_argument("--id", type=int, action="append", dest="ids", help="only these recipe ids")
 
+    p = sub.add_parser("extract", help="parse cached HTML into recipe JSON")
+    p.add_argument("--id", type=int, action="append", dest="ids")
+
     args = parser.parse_args(argv)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
@@ -34,4 +37,10 @@ def main(argv: list[str] | None = None) -> int:
             n += 1
             print(f"{rid}\t{status}", flush=True)
         print(f"fetched {n}", file=sys.stderr)
+    if args.cmd == "extract":
+        from .extract import extract_all
+
+        ok, failed = extract_all(args.data_dir, args.ids)
+        print(f"extracted {ok}, failed {failed}", file=sys.stderr)
+        return 1 if failed else 0
     return 0
