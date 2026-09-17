@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Unofficial Claude plugin to discover recipes on fooby.ch"
 readme = "README.md"
 license = "0BSD"
-requires-python = ">=3.11"
+requires-python = "==3.11.16"
 dependencies = []
 
 [project.scripts]
@@ -12,13 +12,16 @@ fooble = "fooble.cli:main"
 
 [dependency-groups]
 dev = [
-    "pytest>=8",
-    "ruff>=0.6",
+    "pytest==9.1.1",
+    "ruff==0.16.8",
 ]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling==1.32.0"]
 build-backend = "hatchling.build"
+
+[tool.uv]
+required-version = "==0.12.15"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/fooble"]
