@@ -16,12 +16,16 @@ tomatoes and garlic but no onion, under an hour".
 | index     | `fooble index`   | recipe JSON          | `data/fooble.db` (SQLite, FTS5) |
 | serve     | `fooble serve`   | `data/fooble.db`     | MCP server on `:8000/mcp`       |
 
+The crawler honours fooby's `robots.txt` (`Crawl-delay: 10`), so a full crawl
+of ~8,300 recipes takes about a day. It is resumable: cached pages are skipped.
+
 ## Usage
 
 Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/).
 
 ```sh
 uv sync
+uv run fooble crawl --limit 200   # omit --limit for everything
 ```
 
 All commands accept `--data-dir` (default `./data`).

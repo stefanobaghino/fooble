@@ -9,3 +9,4 @@ def test_help_lists_subcommands(capsys):
     assert exc.value.code == 0
     out = capsys.readouterr().out
     assert "usage: fooble" in out
+    assert "crawl" in out

@@ -12,6 +12,13 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="fooble")
     parser.add_argument("--data-dir", type=Path, default=Path("data"))
     parser.add_argument("-v", "--verbose", action="store_true")
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    p = sub.add_parser("crawl", help="fetch recipe pages into the HTML cache")
+    p.add_argument("--limit", type=int)
+    p.add_argument("--refresh", action="store_true", help="refetch cached pages too")
+    p.add_argument("--id", type=int, action="append", dest="ids", help="only these recipe ids")
+
     args = parser.parse_args(argv)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
@@ -19,4 +26,12 @@ def main(argv: list[str] | None = None) -> int:
         stream=sys.stderr,
     )
 
+    if args.cmd == "crawl":
+        from .crawl import crawl
+
+        n = 0
+        for rid, status in crawl(args.data_dir, args.limit, args.refresh, args.ids):
+            n += 1
+            print(f"{rid}\t{status}", flush=True)
+        print(f"fetched {n}", file=sys.stderr)
     return 0
