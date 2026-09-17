@@ -24,6 +24,11 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("index", help="build the SQLite index from recipe JSON")
 
+    p = sub.add_parser("serve", help="run the MCP server")
+    p.add_argument("--stdio", action="store_true")
+    p.add_argument("--host", default="0.0.0.0")
+    p.add_argument("--port", type=int, default=8000)
+
     args = parser.parse_args(argv)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
@@ -50,4 +55,11 @@ def main(argv: list[str] | None = None) -> int:
 
         n = build_index(args.data_dir)
         print(f"indexed {n} recipes", file=sys.stderr)
+    if args.cmd == "serve":
+        from .server import serve
+
+        try:
+            serve(args.data_dir, stdio=args.stdio, host=args.host, port=args.port)
+        except FileNotFoundError as e:
+            raise SystemExit(str(e)) from e
     return 0

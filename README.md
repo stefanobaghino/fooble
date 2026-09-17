@@ -35,9 +35,19 @@ uv sync
 uv run fooble crawl --limit 200   # omit --limit for everything
 uv run fooble extract
 uv run fooble index
+uv run fooble serve               # http://0.0.0.0:8000/mcp
 ```
 
 All commands accept `--data-dir` (default `./data`).
+`fooble serve --stdio` speaks MCP over stdio instead of HTTP.
+
+### MCP tools
+
+- `find_ingredients(query)` resolves free text to canonical ingredient names.
+- `search_recipes(include, exclude, text, category, tag, max_total_minutes, max_calories, limit)`
+  returns compact matches.
+- `get_recipe(recipe_id)` returns the full record: ingredients with quantities,
+  steps, nutrition, and the fooby URL.
 
 ## Development
 

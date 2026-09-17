@@ -8,6 +8,7 @@ requires-python = "==3.11.16"
 dependencies = [
     "httpx==0.28.1",
     "selectolax==0.4.11",
+    "fastmcp==4.0.4",
 ]
 
 [project.scripts]
@@ -16,6 +17,7 @@ fooble = "fooble.cli:main"
 [dependency-groups]
 dev = [
     "pytest==9.1.1",
+    "pytest-asyncio==1.4.0",
     "ruff==0.16.8",
 ]
 
@@ -38,3 +40,4 @@ select = ["E", "F", "I", "UP", "B"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_mode = "auto"

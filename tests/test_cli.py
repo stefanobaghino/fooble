@@ -15,6 +15,7 @@ def test_help_lists_subcommands(capsys):
     assert "crawl" in out
     assert "extract" in out
     assert "index" in out
+    assert "serve" in out
 
 
 def test_extract_writes_recipe_json(tmp_path: Path, fixtures: Path):
@@ -37,3 +38,8 @@ def test_index_builds_database(tmp_path: Path, fixtures: Path, capsys):
     assert main(["--data-dir", str(tmp_path), "index"]) == 0
     assert (tmp_path / "fooble.db").exists()
     assert "indexed 1 recipes" in capsys.readouterr().err
+
+
+def test_serve_without_index_fails(tmp_path: Path):
+    with pytest.raises(SystemExit, match="index not found"):
+        main(["--data-dir", str(tmp_path), "serve"])
