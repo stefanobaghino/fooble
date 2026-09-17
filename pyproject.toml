@@ -1,0 +1,43 @@
+[project]
+name = "fooble"
+version = "0.1.0"
+description = "Crawler, index and MCP server for fooby.ch recipes"
+readme = "README.md"
+license = "AGPL-3.0-or-later"
+requires-python = "==3.11.16"
+dependencies = [
+    "httpx==0.28.1",
+    "selectolax==0.4.11",
+    "fastmcp==4.0.4",
+]
+
+[project.scripts]
+fooble = "fooble.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest==9.1.1",
+    "pytest-asyncio==1.4.0",
+    "ruff==0.16.8",
+]
+
+[build-system]
+requires = ["hatchling==1.32.0"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+required-version = "==0.12.15"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/fooble"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
