@@ -95,6 +95,18 @@ def test_crawl_stops_after_consecutive_failures(tmp_path: Path, monkeypatch):
     assert [e["status"] for e in entries] == [0, 0]
 
 
+def test_crawl_does_not_count_404_as_failure(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(crawl_mod, "MAX_CONSECUTIVE_FAILURES", 1)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/sitemap.xml":
+            return httpx.Response(200, text=SITEMAP)
+        return httpx.Response(404)
+
+    results = list(crawl(tmp_path, client=fake_client(handler)))
+    assert [status for _, status in results] == [404, 404]
+
+
 def test_client_retries_on_server_error(monkeypatch):
     monkeypatch.setattr(crawl_mod.time, "sleep", lambda _: None)
     calls = 0

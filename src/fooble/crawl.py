@@ -140,8 +140,10 @@ def crawl(
             if status == 200:
                 cache.put(rid, resp.text)
                 failures = 0
-            else:
+            elif status == 429 or status >= 500:
                 failures += 1
+            # Other 4xx (typically 404 for a recipe listed in the sitemap but
+            # not published) are definitive answers, not transient failures.
             cache.record(id=rid, url=url, status=status, bytes=len(resp.content))
         except httpx.HTTPError as e:
             failures += 1
