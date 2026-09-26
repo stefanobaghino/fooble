@@ -17,7 +17,10 @@ if [ ! -d "$APP/.git" ]; then
   git clone -q "$HERE" "$APP"
   git -C "$APP" remote set-url origin "$REPO_URL"
 fi
-git -C "$APP" fetch -q "$HERE" "$REF" && git -C "$APP" checkout -q --detach FETCH_HEAD
+# Two statements on purpose: `set -e` ignores a failure inside an `a && b` list, which
+# turned a bad ref into a silent redeploy of whatever was already checked out.
+git -C "$APP" fetch -q "$HERE" "$REF"
+git -C "$APP" checkout -q --detach FETCH_HEAD
 # The managed interpreter must live where the service user can read it, not under ~/.local.
 UV_PYTHON_INSTALL_DIR="$PY" uv sync --locked --project "$APP" --no-dev
 chmod -R a+rX /opt/fooble/app /opt/fooble/python
