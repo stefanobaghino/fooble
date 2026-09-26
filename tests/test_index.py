@@ -30,9 +30,9 @@ def test_build_index(tmp_path: Path, fixtures: Path):
         "SELECT recipe_id FROM ingredient WHERE name = 'garlic' ORDER BY recipe_id"
     ).fetchall() == [(1001,)]
     assert con.execute("SELECT tag FROM tag WHERE recipe_id = 1001 ORDER BY tag").fetchall() == [
-        ("Autumn",),
-        ("Soups and stew",),
+        ("autumn",),
         ("main dish",),
+        ("soups and stew",),
     ]
     assert con.execute("SELECT name FROM alias WHERE alias = 'zucchini'").fetchone() == (
         "courgette",

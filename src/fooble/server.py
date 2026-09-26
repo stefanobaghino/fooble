@@ -18,7 +18,8 @@ mcp = FastMCP(
         "Search English recipes from fooby.ch by ingredient. Ingredient names are canonical "
         "singular English nouns such as 'onion', 'bell pepper', 'chicken'. When unsure how an "
         "ingredient is named in the index, call find_ingredients first, then search_recipes, "
-        "then get_recipe for full details of a chosen recipe."
+        "then get_recipe for full details of a chosen recipe. Call list_tags before filtering "
+        "by tag: tags are a fixed vocabulary such as 'main dish' or 'quick recipes'."
     ),
 )
 _db_file: Path | None = None
@@ -127,10 +128,14 @@ def search_recipes(
     text: Annotated[
         str | None, Field(description="Free-text match on title, keywords and ingredients")
     ] = None,
-    category: Annotated[
-        str | None, Field(description="e.g. 'main dish', 'dessert', 'starter', 'snack'")
+    tag: Annotated[
+        str | None,
+        Field(description="One tag from list_tags, e.g. 'main dish', 'vegetarian', 'autumn'"),
     ] = None,
-    tag: Annotated[str | None, Field(description="e.g. 'Vegetarian', 'Autumn', 'Quick'")] = None,
+    category: Annotated[
+        str | None,
+        Field(description="Same as tag: a recipe's category is its primary tag. Prefer tag."),
+    ] = None,
     max_total_minutes: Annotated[int | None, Field(ge=0)] = None,
     max_calories: Annotated[float | None, Field(ge=0)] = None,
     limit: Annotated[int, Field(ge=1, le=100)] = 20,
@@ -166,14 +171,11 @@ def search_recipes(
     if text and text.strip():
         where.append("r.id IN (SELECT rowid FROM recipe_fts WHERE recipe_fts MATCH ?)")
         params.append(_fts_query(text))
-    if category:
-        where.append("r.category = ? COLLATE NOCASE")
-        params.append(category.strip())
-    if tag:
-        where.append(
-            "EXISTS (SELECT 1 FROM tag t WHERE t.recipe_id = r.id AND t.tag = ? COLLATE NOCASE)"
-        )
-        params.append(tag.strip())
+    # Every category is also one of the recipe's tags, and tags cover recipes with no category,
+    # so both filter on the tag table.
+    for label in {x.strip().lower() for x in (tag, category) if x and x.strip()}:
+        where.append("r.id IN (SELECT recipe_id FROM tag WHERE tag = ?)")
+        params.append(label)
     if max_total_minutes is not None:
         where.append("r.total_minutes <= ?")
         params.append(max_total_minutes)
@@ -213,6 +215,20 @@ def search_recipes(
             for r in rows
         ],
     }
+
+
+@mcp.tool
+def list_tags() -> list[dict[str, Any]]:
+    """List every tag usable with search_recipes(tag=...), with recipe counts, most used first.
+
+    Tags cover courses ('main dish', 'desserts'), diets ('vegetarian', 'vegan'), seasons,
+    occasions and cuisines ('swiss cuisine').
+    """
+    with _connect() as con:
+        rows = con.execute(
+            "SELECT tag, COUNT(*) AS recipes FROM tag GROUP BY tag ORDER BY recipes DESC, tag"
+        ).fetchall()
+    return [{"tag": r["tag"], "recipes": r["recipes"]} for r in rows]
 
 
 @mcp.tool

@@ -47,7 +47,7 @@ CREATE TABLE tag (
     tag TEXT NOT NULL,
     PRIMARY KEY (recipe_id, tag)
 );
-CREATE INDEX tag_tag ON tag(tag COLLATE NOCASE);
+CREATE INDEX tag_tag ON tag(tag, recipe_id);
 CREATE TABLE alias (
     alias TEXT PRIMARY KEY,
     name TEXT NOT NULL
@@ -78,6 +78,10 @@ def build_index(data_dir: Path) -> int:
     for path in sorted(recipes_dir.glob("*.json")):
         r = json.loads(path.read_text(encoding="utf-8"))
         nut = r.get("nutrition") or {}
+        # Tags and categories come in mixed case ("Vegan", "desserts"); store them lowercase so
+        # filters compare exactly and use the tag index.
+        category = (r.get("category") or "").strip().lower() or None
+        tags = {t.strip().lower() for t in r.get("tags", [])} - {""}
         con.execute(
             "INSERT INTO recipe VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
@@ -86,7 +90,7 @@ def build_index(data_dir: Path) -> int:
                 r["title"],
                 r.get("description"),
                 r.get("image"),
-                r.get("category"),
+                category,
                 r.get("prep_minutes"),
                 r.get("total_minutes"),
                 r.get("yield"),
@@ -115,9 +119,7 @@ def build_index(data_dir: Path) -> int:
                 for i, ing in enumerate(r["ingredients"])
             ],
         )
-        con.executemany(
-            "INSERT OR IGNORE INTO tag VALUES (?,?)", [(r["id"], t) for t in r.get("tags", [])]
-        )
+        con.executemany("INSERT INTO tag VALUES (?,?)", [(r["id"], t) for t in sorted(tags)])
         con.execute(
             "INSERT INTO recipe_fts(rowid, title, keywords, ingredients) VALUES (?,?,?,?)",
             (
