@@ -55,6 +55,9 @@ CREATE TABLE alias (
 CREATE VIRTUAL TABLE recipe_fts USING fts5(
     title, keywords, ingredients, tokenize = 'porter unicode61'
 );
+-- One row per distinct canonical ingredient name, for whole-word containment lookups
+-- ("onion" finds "red onion", "onions" finds "onion").
+CREATE VIRTUAL TABLE ingredient_name_fts USING fts5(name, tokenize = 'porter unicode61');
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 """
 
@@ -125,8 +128,10 @@ def build_index(data_dir: Path) -> int:
             ),
         )
         n += 1
+    con.execute("INSERT INTO ingredient_name_fts(name) SELECT DISTINCT name FROM ingredient")
     con.executemany("INSERT INTO alias VALUES (?,?)", list(alias_map().items()))
     con.execute("INSERT INTO meta VALUES ('recipes', ?)", (str(n),))
+    con.execute("ANALYZE")
     con.commit()
     con.close()
     tmp.replace(target)

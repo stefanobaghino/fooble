@@ -25,5 +25,8 @@ chmod -R a+rX /opt/fooble/app /opt/fooble/python
 sudo install -m 644 "$HERE"/deploy/fooble.service "$HERE"/deploy/fooble-crawl.service "$HERE"/deploy/fooble-crawl.timer /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now fooble.service fooble-crawl.timer
+# The server expects the schema of the code it runs; rebuild the index from the extracted
+# recipes before restarting rather than waiting for the nightly crawl to do it.
+sudo -u fooble "$APP/.venv/bin/fooble" --data-dir "$DATA" index
 sudo systemctl restart fooble.service
 systemctl --no-pager --lines=0 status fooble.service fooble-crawl.timer | grep -E '^\S|Active:'

@@ -43,6 +43,13 @@ def test_build_index(tmp_path: Path, fixtures: Path):
     assert con.execute(
         "SELECT rowid FROM recipe_fts WHERE recipe_fts MATCH 'ingredients: risotto'"
     ).fetchall() == [(1002,)]
+    assert con.execute(
+        "SELECT name FROM ingredient_name_fts WHERE ingredient_name_fts MATCH ? ORDER BY name",
+        ('"oil"',),
+    ).fetchall() == [("oil",), ("olive oil",)]
+    assert con.execute("SELECT COUNT(*) FROM ingredient_name_fts").fetchone() == (
+        con.execute("SELECT COUNT(DISTINCT name) FROM ingredient").fetchone()
+    )
     assert (
         json.loads(con.execute("SELECT json FROM recipe WHERE id = 1002").fetchone()[0])["title"]
         == "Herb rice balls"
