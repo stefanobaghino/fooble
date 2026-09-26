@@ -5,7 +5,7 @@ description: Find recipes from fooby.ch by ingredient, time, category or free te
 
 # Finding recipes with fooble
 
-The `fooble` MCP server indexes the English recipes of fooby.ch. Three tools:
+The `fooble` MCP server indexes the English recipes of fooby.ch. Four tools:
 
 1. `find_ingredients(query)`: resolve a word to the canonical ingredient names the
    index uses, with recipe counts. Names are lowercase singular nouns such as
@@ -18,7 +18,12 @@ The `fooble` MCP server indexes the English recipes of fooby.ch. Three tools:
    exact canonical names so nothing is hidden by accident. Results are compact
    (id, title, category, total minutes, calories, ingredient names), sorted by
    total time.
-3. `get_recipe(recipe_id)`: the full recipe with quantities, steps, nutrition and
+3. `list_tags()`: every tag with its recipe count. Tags are a fixed lowercase
+   vocabulary covering courses (`main dish`, `desserts`), diets (`vegetarian`,
+   `vegan`), seasons, occasions and cuisines (`swiss cuisine`). Call it before
+   filtering by `tag`; don't guess labels. `category` is the recipe's primary tag
+   and filters the same way as `tag`.
+4. `get_recipe(recipe_id)`: the full recipe with quantities, steps, nutrition and
    the fooby URL. Call it only for recipes the user wants to see in detail.
 
 ## Workflow

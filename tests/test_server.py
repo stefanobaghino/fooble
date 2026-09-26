@@ -27,13 +27,22 @@ async def call(mcp, tool, **args):
         return (await client.call_tool(tool, args)).data
 
 
-async def test_lists_three_tools(mcp):
+async def test_lists_tools(mcp):
     async with Client(mcp) as client:
         assert sorted(t.name for t in await client.list_tools()) == [
             "find_ingredients",
             "get_recipe",
+            "list_tags",
             "search_recipes",
         ]
+
+
+async def test_list_tags(mcp):
+    tags = await call(mcp, "list_tags")
+    assert {"tag": "autumn", "recipes": 1} in tags
+    assert all(t["tag"] == t["tag"].lower() for t in tags)
+    counts = [t["recipes"] for t in tags]
+    assert counts == sorted(counts, reverse=True)
 
 
 async def test_find_ingredients(mcp):
@@ -96,6 +105,9 @@ async def test_search_by_text_category_tag_and_limits(mcp):
     assert (await call(mcp, "search_recipes", text='"drop table"'))["total"] == 0
     assert (await call(mcp, "search_recipes", category="MAIN DISH"))["total"] == 1
     assert (await call(mcp, "search_recipes", tag="autumn"))["total"] == 1
+    assert (await call(mcp, "search_recipes", tag="Soups and Stew"))["total"] == 1
+    assert (await call(mcp, "search_recipes", category="main dish", tag="autumn"))["total"] == 1
+    assert (await call(mcp, "search_recipes", category="main dish", tag="nope"))["total"] == 0
     res = await call(mcp, "search_recipes", max_total_minutes=80)
     assert [r["id"] for r in res["results"]] == [1002]
     assert (await call(mcp, "search_recipes", max_calories=300))["total"] == 1
