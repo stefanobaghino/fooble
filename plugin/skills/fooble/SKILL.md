@@ -1,6 +1,6 @@
 ---
 name: fooble
-description: Find recipes from fooby.ch by ingredient, time, category or free text using the fooble MCP tools. Use when the user asks what to cook, wants recipes with or without certain ingredients, or mentions fooby.
+description: Find recipes from fooby.ch by ingredient, time, tag (course, cuisine, diet, season, occasion) or free text using the fooble MCP tools. Use when the user asks what to cook, wants recipes with or without certain ingredients, or mentions fooby.
 ---
 
 # Finding recipes with fooble
@@ -33,7 +33,10 @@ The `fooble` MCP server indexes the English recipes of fooby.ch. Four tools:
 - If a name isn't obviously canonical, confirm it with `find_ingredients`
   ("peppers" may be `bell pepper` or `chilli`). This matters most for `exclude`.
 - Use `exclude` for allergies and dislikes. Use `max_total_minutes` for
-  "quick". Use `text` for dish names or cuisines ("curry", "pasta").
+  "quick"; it is more reliable than the `quick recipes` tag.
+- For courses, cuisines, seasons and occasions ("something Italian",
+  "something for Christmas"), call `list_tags` and filter by the matching tag.
+  Use `text` for dish names ("curry", "pasta") and for anything without a tag.
 - Present a shortlist of 3 to 5 titles with total time, then fetch details for
   the one the user picks. Always give the fooby URL when showing a recipe.
 - Quantities in `get_recipe` are for the stated yield; scale them if asked.
