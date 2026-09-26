@@ -37,6 +37,43 @@ def _fts_query(text: str) -> str:
     return " ".join(f'"{w}"*' for w in words if w)
 
 
+# Names containing any of these words are stand-ins, not the ingredient they name:
+# "vegan chicken substitute" is not chicken, "wine vinegar" is not wine.
+_STAND_IN_WORDS = frozenset({"substitute", "stabilizer", "stabiliser", "vinegar"})
+# Compound names that contain a term without being that ingredient.
+_NOT_CONTAINED: dict[str, frozenset[str]] = {
+    "cream": frozenset({"ice cream", "cream cheese"}),
+    "butter": frozenset({"peanut butter"}),
+    "pepper": frozenset({"bell pepper"}),
+}
+
+
+def _denotes(term: str, name: str) -> bool:
+    """Whether canonical ingredient `name`, which contains `term`, is a kind of `term`."""
+    if name == term:
+        return True
+    if _STAND_IN_WORDS & set(name.split()):
+        return False
+    return name not in _NOT_CONTAINED.get(term, ())
+
+
+def _contained_names(con: sqlite3.Connection, term: str) -> list[str]:
+    """Canonical ingredient names that contain `term` (or its canonical alias) as whole words.
+
+    Words are stemmed, so "onions" finds "onion" and "red onion"; a multi-word term matches as a
+    phrase, so "red onion" does not find "onion".
+    """
+    phrases = {term}
+    row = con.execute("SELECT name FROM alias WHERE alias = ?", (term,)).fetchone()
+    if row:
+        phrases.add(row["name"])
+    match = " OR ".join(f'"{p.replace(chr(34), "")}"' for p in sorted(phrases))
+    rows = con.execute(
+        "SELECT name FROM ingredient_name_fts WHERE ingredient_name_fts MATCH ?", (match,)
+    )
+    return sorted(r["name"] for r in rows if _denotes(term, r["name"]))
+
+
 @mcp.tool
 def find_ingredients(
     query: Annotated[str, Field(description="Free text, e.g. 'pepper' or 'chick'")],
@@ -78,7 +115,11 @@ def find_ingredients(
 @mcp.tool
 def search_recipes(
     include: Annotated[
-        list[str] | None, Field(description="Canonical ingredient names that must all be present")
+        list[str] | None,
+        Field(
+            description="Ingredients that must all be present. Each matches any ingredient name "
+            "containing it as whole words: 'onion' also finds 'red onion' and 'spring onion'."
+        ),
     ] = None,
     exclude: Annotated[
         list[str] | None, Field(description="Canonical ingredient names that must not be present")
@@ -97,17 +138,30 @@ def search_recipes(
     """Search recipes by ingredients and other properties.
 
     All filters combine with AND. Results are compact; call get_recipe for the full record.
-    Ingredient filters use canonical names (see find_ingredients); matching is exact.
+    `include` terms match by containment; `include_matches` in the result lists the canonical
+    names each term matched. `exclude` names must match a canonical name exactly (see
+    find_ingredients) so that nothing is hidden by accident.
     """
     where: list[str] = []
     params: list[Any] = []
-    for name in include or []:
-        where.append("EXISTS (SELECT 1 FROM ingredient i WHERE i.recipe_id = r.id AND i.name = ?)")
-        params.append(name.strip().lower())
+    include_matches: dict[str, list[str]] = {}
+    con = _connect()
+    for term in include or []:
+        term = term.strip().lower()
+        if not term:
+            continue
+        names = _contained_names(con, term)
+        include_matches[term] = names
+        if not names:
+            where.append("0")
+            continue
+        # A non-correlated IN builds the id set once from the (name, recipe_id) index;
+        # a correlated EXISTS probes it once per recipe and is an order of magnitude slower.
+        marks = ",".join("?" * len(names))
+        where.append(f"r.id IN (SELECT recipe_id FROM ingredient WHERE name IN ({marks}))")
+        params.extend(names)
     for name in exclude or []:
-        where.append(
-            "NOT EXISTS (SELECT 1 FROM ingredient i WHERE i.recipe_id = r.id AND i.name = ?)"
-        )
+        where.append("r.id NOT IN (SELECT recipe_id FROM ingredient WHERE name = ?)")
         params.append(name.strip().lower())
     if text and text.strip():
         where.append("r.id IN (SELECT rowid FROM recipe_fts WHERE recipe_fts MATCH ?)")
@@ -127,7 +181,7 @@ def search_recipes(
         where.append("r.calories <= ?")
         params.append(max_calories)
     sql = "FROM recipe r" + (" WHERE " + " AND ".join(where) if where else "")
-    with _connect() as con:
+    with con:
         total = con.execute(f"SELECT COUNT(*) {sql}", params).fetchone()[0]
         rows = con.execute(
             f"SELECT r.id, r.title, r.category, r.total_minutes, r.calories {sql} "
@@ -146,6 +200,7 @@ def search_recipes(
                 names[rec_id].append(name)
     return {
         "total": total,
+        "include_matches": include_matches,
         "results": [
             {
                 "id": r["id"],

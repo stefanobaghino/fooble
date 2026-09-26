@@ -45,7 +45,8 @@ All commands accept `--data-dir` (default `./data`).
 
 - `find_ingredients(query)` resolves free text to canonical ingredient names.
 - `search_recipes(include, exclude, text, category, tag, max_total_minutes, max_calories, limit)`
-  returns compact matches.
+  returns compact matches. `include` matches ingredient names by whole-word
+  containment (`onion` also finds `red onion`); `exclude` matches exactly.
 - `get_recipe(recipe_id)` returns the full record: ingredients with quantities,
   steps, nutrition, and the fooby URL.
 
