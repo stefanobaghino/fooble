@@ -247,6 +247,20 @@ async def test_search_by_pantry_ranking_and_filters(mcp):
     assert page["total"] == 2 and page["next_offset"] == 1
 
 
+async def test_search_by_pantry_use_up_ranks_first(mcp):
+    have = ["beef", "onion", "garlic"]
+    plain = await call(mcp, "search_by_pantry", have=[*have, "egg"], max_missing=10)
+    assert "use_up_matches" not in plain and "uses_up" not in plain["results"][0]
+    # Only the rice balls use egg: using it up outranks using more of the pantry.
+    res = await call(mcp, "search_by_pantry", have=have, use_up=["Egg"], max_missing=10)
+    assert [r["id"] for r in res["results"]] == [1002, 1001]
+    assert res["use_up_matches"] == {"egg": ["egg"]}
+    assert [r["uses_up"] for r in res["results"]] == [["egg"], []]
+    assert "egg" in res["results"][0]["uses"]
+    only = await call(mcp, "search_by_pantry", have=[], use_up=["egg"], max_missing=10)
+    assert [r["id"] for r in only["results"]] == [1002]
+
+
 async def test_search_by_pantry_nothing_known(mcp):
     res = await call(mcp, "search_by_pantry", have=["zucchini", "  "])
     assert res == {

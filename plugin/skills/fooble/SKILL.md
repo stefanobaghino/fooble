@@ -20,12 +20,14 @@ The `fooble` MCP server indexes the English recipes of fooby.ch. Five tools:
    `sort` is `total_time` (default), `prep_time`, `calories`, `protein` (highest
    first) or `newest`. Nutrition is per serving, and `serving_size` says what a
    serving is: usually a person, often a piece.
-3. `search_by_pantry(have, lacking, max_missing, exclude, tag, max_total_minutes, max_prep_minutes, max_calories, min_protein_g, max_fat_g, max_carbohydrate_g, limit, offset)`:
+3. `search_by_pantry(have, use_up, lacking, max_missing, exclude, tag, max_total_minutes, max_prep_minutes, max_calories, min_protein_g, max_fat_g, max_carbohydrate_g, limit, offset)`:
    recipes to cook from what the user has. `have` terms match like `include`.
    Salt, pepper, water and cooking oils are assumed; basics such as butter, flour,
    milk, lemon and stock count half when missing; `lacking` names basics the user
-   is out of. `max_missing` (default 2) caps the weighted count. Results use the
-   most of `have` first, and list `uses`, `missing` (with the recipe section, e.g.
+   is out of. `max_missing` (default 2) caps the weighted count. `use_up` names
+   what should go first, such as food about to expire; it counts as had. Results
+   use the most of `use_up` first, then the most of both lists, and list `uses`,
+   `uses_up` (when `use_up` is given), `missing` (with the recipe section, e.g.
    "To serve") and `missing_basics`.
 4. `list_tags()`: every tag with its recipe count. Tags are a fixed lowercase
    vocabulary covering courses (`main dish`, `desserts`), diets (`vegetarian`,
@@ -41,6 +43,9 @@ The `fooble` MCP server indexes the English recipes of fooby.ch. Five tools:
   spinach, feta and some pasta" becomes `have=["egg", "spinach", "feta",
   "pasta"]`. Say what each suggestion is missing, and mention basics only as
   "you probably have". Raise `max_missing` if nothing comes back.
+- Food the user wants gone first ("the spinach needs using up", "the cream
+  expires tomorrow") goes in `use_up` instead of `have`. Say which suggestions
+  use it.
 - "Something with spinach and feta", where every ingredient must be in the
   dish, goes to `search_recipes(include=[...])`.
 - If a name isn't obviously canonical, confirm it with `find_ingredients`
