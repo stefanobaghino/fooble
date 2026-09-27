@@ -33,6 +33,7 @@ async def test_lists_tools(mcp):
             "find_ingredients",
             "get_recipe",
             "list_tags",
+            "search_by_pantry",
             "search_recipes",
         ]
 
@@ -186,3 +187,73 @@ async def test_get_recipe(mcp):
     assert "extractor_version" not in recipe
     with pytest.raises(ToolError, match="no recipe with id 1"):
         await call(mcp, "get_recipe", recipe_id=1)
+
+
+RICE_BALLS_PANTRY = [
+    "egg",
+    "parmesan",
+    "rice",
+    "shallot",
+    "wine",
+    "mozzarella",
+    "basil",
+    "breadcrumbs",
+]
+
+
+async def test_search_by_pantry(mcp):
+    res = await call(mcp, "search_by_pantry", have=RICE_BALLS_PANTRY)
+    assert res["total"] == 1 and res["next_offset"] is None
+    assert res["have_matches"]["rice"] == ["risotto rice"], "have matches by containment"
+    hit = res["results"][0]
+    assert hit["id"] == 1002
+    # Salt, pepper and both oils are assumed; stock and flour are basics at half weight.
+    assert hit["missing_cost"] == 1.0
+    assert hit["missing"] == []
+    assert hit["missing_basics"] == [
+        {"name": "stock", "group": "Risotto"},
+        {"name": "flour", "group": "Crumb coating"},
+    ]
+    assert sorted(hit["uses"]) == sorted(
+        ["basil", "breadcrumbs", "egg", "mozzarella", "parmesan", "risotto rice", "shallot", "wine"]
+    )
+    assert hit["serving_size"] == "12 pieces"
+
+
+async def test_search_by_pantry_weights_and_overrides(mcp):
+    async def pantry(**args):
+        return await call(mcp, "search_by_pantry", **args)
+
+    lacking = (await pantry(have=RICE_BALLS_PANTRY, lacking=["Flour"]))["results"][0]
+    assert lacking["missing_cost"] == 1.5
+    assert lacking["missing"] == [{"name": "flour", "group": "Crumb coating"}]
+    assert (await pantry(have=RICE_BALLS_PANTRY, lacking=["flour"], max_missing=1))["total"] == 0
+    has_stock = (await pantry(have=[*RICE_BALLS_PANTRY, "stock"]))["results"][0]
+    assert has_stock["missing_cost"] == 0.5 and "stock" in has_stock["uses"]
+
+
+async def test_search_by_pantry_ranking_and_filters(mcp):
+    async def ids(**args):
+        return [r["id"] for r in (await call(mcp, "search_by_pantry", **args))["results"]]
+
+    have = ["beef", "onion", "garlic", "egg"]
+    assert await ids(have=have) == [], "both recipes miss more than two"
+    # Beef stew uses three of these and misses 5.5; rice balls use one and miss 8.
+    assert await ids(have=have, max_missing=10) == [1001, 1002], "most of the pantry first"
+    assert await ids(have=have, max_missing=10, tag="autumn") == [1001]
+    assert await ids(have=have, max_missing=10, exclude=["beef"]) == [1002]
+    assert await ids(have=have, max_missing=10, max_calories=300) == [1002]
+    page = await call(mcp, "search_by_pantry", have=have, max_missing=10, limit=1)
+    assert page["total"] == 2 and page["next_offset"] == 1
+
+
+async def test_search_by_pantry_nothing_known(mcp):
+    res = await call(mcp, "search_by_pantry", have=["zucchini", "  "])
+    assert res == {
+        "total": 0,
+        "next_offset": None,
+        "have_matches": {"zucchini": []},
+        "results": [],
+    }
+    res = await call(mcp, "search_by_pantry", have=["salt"], max_missing=20)
+    assert res["total"] == 2, "a staple the cook lists counts as used"
