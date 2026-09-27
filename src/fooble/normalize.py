@@ -52,6 +52,17 @@ def alias_map() -> dict[str, str]:
     return out
 
 
+@lru_cache(maxsize=1)
+def staple_weights() -> dict[str, float]:
+    """{canonical name: weight} loaded from staples.toml; each weight is in [0, 1)."""
+    data = tomllib.loads(resources.files(__package__).joinpath("staples.toml").read_text("utf-8"))
+    weights = {name: float(w) for name, w in data["weights"].items()}
+    bad = {n: w for n, w in weights.items() if not 0 <= w < 1}
+    if bad:
+        raise ValueError(f"staple weights must be in [0, 1): {bad}")
+    return weights
+
+
 def singularize(word: str) -> str:
     if len(word) <= 3:
         return word

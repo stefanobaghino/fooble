@@ -7,7 +7,7 @@ import logging
 import sqlite3
 from pathlib import Path
 
-from .normalize import alias_map
+from .normalize import alias_map, staple_weights
 
 log = logging.getLogger(__name__)
 
@@ -28,7 +28,9 @@ CREATE TABLE recipe (
     carbohydrate_g REAL,
     protein_g REAL,
     published TEXT,
-    json TEXT NOT NULL
+    json TEXT NOT NULL,
+    -- Distinct ingredient names, so pantry search can count what is missing from index hits.
+    n_ingredients INTEGER NOT NULL
 );
 CREATE TABLE ingredient (
     recipe_id INTEGER NOT NULL REFERENCES recipe(id),
@@ -48,6 +50,7 @@ CREATE TABLE tag (
     PRIMARY KEY (recipe_id, tag)
 );
 CREATE INDEX tag_tag ON tag(tag, recipe_id);
+CREATE TABLE staple (name TEXT PRIMARY KEY, weight REAL NOT NULL);
 CREATE TABLE alias (
     alias TEXT PRIMARY KEY,
     name TEXT NOT NULL
@@ -92,7 +95,7 @@ def build_index(data_dir: Path) -> int:
         category = (r.get("category") or "").strip().lower() or None
         tags = {t.strip().lower() for t in r.get("tags", [])} - {""}
         con.execute(
-            "INSERT INTO recipe VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO recipe VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 r["id"],
                 r["url"],
@@ -110,6 +113,7 @@ def build_index(data_dir: Path) -> int:
                 nut.get("protein_g"),
                 published_date(r.get("published")),
                 json.dumps(r, ensure_ascii=False),
+                len({ing["name"] for ing in r["ingredients"]}),
             ),
         )
         con.executemany(
@@ -141,6 +145,7 @@ def build_index(data_dir: Path) -> int:
         n += 1
     con.execute("INSERT INTO ingredient_name_fts(name) SELECT DISTINCT name FROM ingredient")
     con.executemany("INSERT INTO alias VALUES (?,?)", list(alias_map().items()))
+    con.executemany("INSERT INTO staple VALUES (?,?)", list(staple_weights().items()))
     con.execute("INSERT INTO meta VALUES ('recipes', ?)", (str(n),))
     con.execute("ANALYZE")
     con.commit()

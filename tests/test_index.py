@@ -67,6 +67,18 @@ def test_build_index_replaces_existing_db_atomically(tmp_path: Path, fixtures: P
     assert not db_path(data_dir).with_suffix(".db.tmp").exists()
 
 
+def test_pantry_columns(tmp_path: Path, fixtures: Path):
+    data_dir = make_data_dir(tmp_path, fixtures)
+    build_index(data_dir)
+    con = sqlite3.connect(db_path(data_dir))
+    assert con.execute("SELECT id, n_ingredients FROM recipe ORDER BY id").fetchall() == [
+        (1001, 11),
+        (1002, 14),
+    ], "egg appears twice in 1002 but counts once"
+    weights = dict(con.execute("SELECT name, weight FROM staple"))
+    assert weights["salt"] == 0 and weights["butter"] == 0.5
+
+
 def test_published_date():
     assert published_date("2024-02-29") == "2024-02-29"
     assert published_date("0017-05-13") is None

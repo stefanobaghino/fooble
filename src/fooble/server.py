@@ -19,7 +19,8 @@ mcp = FastMCP(
         "singular English nouns such as 'onion', 'bell pepper', 'chicken'. When unsure how an "
         "ingredient is named in the index, call find_ingredients first, then search_recipes, "
         "then get_recipe for full details of a chosen recipe. Call list_tags before filtering "
-        "by tag: tags are a fixed vocabulary such as 'main dish' or 'quick recipes'."
+        "by tag: tags are a fixed vocabulary such as 'main dish' or 'quick recipes'. For "
+        "'what can I make with what I have', call search_by_pantry instead of search_recipes."
     ),
 )
 _db_file: Path | None = None
@@ -70,6 +71,85 @@ _RESULT_COLUMNS = (
     "fat_g",
     "carbohydrate_g",
 )
+
+# Parameters shared by search_recipes and search_by_pantry.
+Exclude = Annotated[
+    list[str] | None, Field(description="Canonical ingredient names that must not be present")
+]
+Tag = Annotated[
+    str | None,
+    Field(description="One tag from list_tags, e.g. 'main dish', 'vegetarian', 'autumn'"),
+]
+MaxTotalMinutes = Annotated[
+    int | None, Field(ge=0, description="Including resting, marinating and baking")
+]
+MaxPrepMinutes = Annotated[int | None, Field(ge=0, description="Hands-on time only")]
+MaxCalories = Annotated[float | None, Field(ge=0, description=f"kcal {_PER_SERVING}")]
+Grams = Annotated[float | None, Field(ge=0, description=f"Grams {_PER_SERVING}")]
+Limit = Annotated[int, Field(ge=1, le=100)]
+Offset = Annotated[int, Field(ge=0, description=_OFFSET_DESCRIPTION)]
+
+
+def _shared_filters(
+    *,
+    exclude: list[str] | None,
+    tags: tuple[str | None, ...],
+    max_total_minutes: int | None,
+    max_prep_minutes: int | None,
+    max_calories: float | None,
+    min_protein_g: float | None,
+    max_fat_g: float | None,
+    max_carbohydrate_g: float | None,
+) -> tuple[list[str], list[Any]]:
+    """WHERE conditions on recipe `r` for the filters both search tools accept."""
+    where: list[str] = []
+    params: list[Any] = []
+    for name in exclude or []:
+        where.append("r.id NOT IN (SELECT recipe_id FROM ingredient WHERE name = ?)")
+        params.append(name.strip().lower())
+    for label in {t.strip().lower() for t in tags if t and t.strip()}:
+        where.append("r.id IN (SELECT recipe_id FROM tag WHERE tag = ?)")
+        params.append(label)
+    for column, op, value in (
+        ("total_minutes", "<=", max_total_minutes),
+        ("prep_minutes", "<=", max_prep_minutes),
+        ("calories", "<=", max_calories),
+        ("protein_g", ">=", min_protein_g),
+        ("fat_g", "<=", max_fat_g),
+        ("carbohydrate_g", "<=", max_carbohydrate_g),
+    ):
+        if value is not None:
+            where.append(f"r.{column} {op} ?")
+            params.append(value)
+    return where, params
+
+
+def _page(
+    con: sqlite3.Connection,
+    sql: str,
+    params: list[Any],
+    order_by: str,
+    limit: int,
+    offset: int,
+    *,
+    prefix: str = "",
+    extra: str = "",
+) -> tuple[list[sqlite3.Row], int]:
+    """One page of `sql` (a FROM clause over recipe `r`) and the total number of matches.
+
+    `prefix` is a WITH clause and `extra` more result columns; `params` covers both.
+    """
+    columns = ", ".join("r." + c for c in _RESULT_COLUMNS)
+    # The window count rides along with the page, saving a second pass over the matches.
+    rows = con.execute(
+        f"{prefix} SELECT {columns}{extra}, COUNT(*) OVER () AS total {sql} "
+        f"ORDER BY {order_by}, r.id LIMIT ? OFFSET ?",
+        [*params, limit, offset],
+    ).fetchall()
+    if rows:
+        return rows, rows[0]["total"]
+    # An empty page carries no count: nothing matched, or offset is past the end.
+    return rows, con.execute(f"{prefix} SELECT COUNT(*) {sql}", params).fetchone()[0]
 
 
 # Names containing any of these words are stand-ins, not the ingredient they name:
@@ -162,30 +242,21 @@ def search_recipes(
             "containing it as whole words: 'onion' also finds 'red onion' and 'spring onion'."
         ),
     ] = None,
-    exclude: Annotated[
-        list[str] | None, Field(description="Canonical ingredient names that must not be present")
-    ] = None,
+    exclude: Exclude = None,
     text: Annotated[
         str | None, Field(description="Free-text match on title, keywords and ingredients")
     ] = None,
-    tag: Annotated[
-        str | None,
-        Field(description="One tag from list_tags, e.g. 'main dish', 'vegetarian', 'autumn'"),
-    ] = None,
+    tag: Tag = None,
     category: Annotated[
         str | None,
         Field(description="Same as tag: a recipe's category is its primary tag. Prefer tag."),
     ] = None,
-    max_total_minutes: Annotated[
-        int | None, Field(ge=0, description="Including resting, marinating and baking")
-    ] = None,
-    max_prep_minutes: Annotated[int | None, Field(ge=0, description="Hands-on time only")] = None,
-    max_calories: Annotated[float | None, Field(ge=0, description=f"kcal {_PER_SERVING}")] = None,
-    min_protein_g: Annotated[float | None, Field(ge=0, description=f"Grams {_PER_SERVING}")] = None,
-    max_fat_g: Annotated[float | None, Field(ge=0, description=f"Grams {_PER_SERVING}")] = None,
-    max_carbohydrate_g: Annotated[
-        float | None, Field(ge=0, description=f"Grams {_PER_SERVING}")
-    ] = None,
+    max_total_minutes: MaxTotalMinutes = None,
+    max_prep_minutes: MaxPrepMinutes = None,
+    max_calories: MaxCalories = None,
+    min_protein_g: Grams = None,
+    max_fat_g: Grams = None,
+    max_carbohydrate_g: Grams = None,
     sort: Annotated[
         Sort,
         Field(
@@ -193,8 +264,8 @@ def search_recipes(
             "first; newest by publication date"
         ),
     ] = "total_time",
-    limit: Annotated[int, Field(ge=1, le=100)] = 20,
-    offset: Annotated[int, Field(ge=0, description=_OFFSET_DESCRIPTION)] = 0,
+    limit: Limit = 20,
+    offset: Offset = 0,
 ) -> dict[str, Any]:
     """Search recipes by ingredients and other properties.
 
@@ -223,44 +294,26 @@ def search_recipes(
         marks = ",".join("?" * len(names))
         where.append(f"r.id IN (SELECT recipe_id FROM ingredient WHERE name IN ({marks}))")
         params.extend(names)
-    for name in exclude or []:
-        where.append("r.id NOT IN (SELECT recipe_id FROM ingredient WHERE name = ?)")
-        params.append(name.strip().lower())
     if text and text.strip():
         where.append("r.id IN (SELECT rowid FROM recipe_fts WHERE recipe_fts MATCH ?)")
         params.append(_fts_query(text))
     # Every category is also one of the recipe's tags, and tags cover recipes with no category,
     # so both filter on the tag table.
-    for label in {x.strip().lower() for x in (tag, category) if x and x.strip()}:
-        where.append("r.id IN (SELECT recipe_id FROM tag WHERE tag = ?)")
-        params.append(label)
-    if max_total_minutes is not None:
-        where.append("r.total_minutes <= ?")
-        params.append(max_total_minutes)
-    for column, op, value in (
-        ("prep_minutes", "<=", max_prep_minutes),
-        ("calories", "<=", max_calories),
-        ("protein_g", ">=", min_protein_g),
-        ("fat_g", "<=", max_fat_g),
-        ("carbohydrate_g", "<=", max_carbohydrate_g),
-    ):
-        if value is not None:
-            where.append(f"r.{column} {op} ?")
-            params.append(value)
+    shared, shared_params = _shared_filters(
+        exclude=exclude,
+        tags=(tag, category),
+        max_total_minutes=max_total_minutes,
+        max_prep_minutes=max_prep_minutes,
+        max_calories=max_calories,
+        min_protein_g=min_protein_g,
+        max_fat_g=max_fat_g,
+        max_carbohydrate_g=max_carbohydrate_g,
+    )
+    where += shared
+    params += shared_params
     sql = "FROM recipe r" + (" WHERE " + " AND ".join(where) if where else "")
     with con:
-        # The window count rides along with the page, saving a second pass over the matches.
-        rows = con.execute(
-            f"SELECT {', '.join('r.' + c for c in _RESULT_COLUMNS)}, "
-            f"COUNT(*) OVER () AS total {sql} "
-            f"ORDER BY {_ORDER_BY[sort]}, r.id LIMIT ? OFFSET ?",
-            [*params, limit, offset],
-        ).fetchall()
-        if rows:
-            total = rows[0]["total"]
-        else:
-            # An empty page carries no count: nothing matched, or offset is past the end.
-            total = con.execute(f"SELECT COUNT(*) {sql}", params).fetchone()[0]
+        rows, total = _page(con, sql, params, _ORDER_BY[sort], limit, offset)
         ids = [r["id"] for r in rows]
         names: dict[int, list[str]] = {i: [] for i in ids}
         if ids:
@@ -277,6 +330,136 @@ def search_recipes(
         "include_matches": include_matches,
         "results": [
             {**{c: r[c] for c in _RESULT_COLUMNS}, "ingredients": names[r["id"]]} for r in rows
+        ],
+    }
+
+
+@mcp.tool
+def search_by_pantry(
+    have: Annotated[
+        list[str],
+        Field(
+            description="Ingredients the cook has. Each covers any ingredient name containing "
+            "it as whole words, as in search_recipes include."
+        ),
+    ],
+    lacking: Annotated[
+        list[str] | None,
+        Field(description="Staples the cook is out of, e.g. 'butter'; they count as missing"),
+    ] = None,
+    max_missing: Annotated[
+        float,
+        Field(ge=0, description="Most missing ingredients allowed; a missing basic counts half"),
+    ] = 2,
+    exclude: Exclude = None,
+    tag: Tag = None,
+    max_total_minutes: MaxTotalMinutes = None,
+    max_prep_minutes: MaxPrepMinutes = None,
+    max_calories: MaxCalories = None,
+    min_protein_g: Grams = None,
+    max_fat_g: Grams = None,
+    max_carbohydrate_g: Grams = None,
+    limit: Limit = 20,
+    offset: Offset = 0,
+) -> dict[str, Any]:
+    """Find recipes to cook from what the cook has, ranked by how much of it they use.
+
+    Salt, pepper, water and cooking oils are assumed present. Basics such as butter, flour,
+    milk, lemon and stock are probably present: a missing one counts half. Everything else
+    counts one. Results use the most of `have` first, then need the least; each lists what
+    it uses, what is missing (with its group, e.g. 'To serve') and which basics it needs.
+    Other filters work as in search_recipes; `next_offset` is set when more results follow.
+    """
+    con = _connect()
+    have_matches: dict[str, list[str]] = {}
+    for term in have:
+        term = term.strip().lower()
+        if term:
+            have_matches[term] = _contained_names(con, term)
+    mine = {n for names in have_matches.values() for n in names}
+    out_of = {x.strip().lower() for x in lacking or []}
+    staples = {
+        r["name"]: r["weight"]
+        for r in con.execute("SELECT name, weight FROM staple")
+        if r["name"] not in mine and r["name"] not in out_of
+    }
+    if not mine:
+        return {"total": 0, "next_offset": None, "have_matches": have_matches, "results": []}
+    # k lists every name that lowers a recipe's missing count: the cook's own (weight 0,
+    # counted as used) and the staples (their weight). Starting from the name index keeps
+    # the scan to recipes that use at least one of them.
+    known = [(n, 0.0, 1) for n in sorted(mine)] + [(n, w, 0) for n, w in sorted(staples.items())]
+    prefix = f"""WITH k(name, weight, mine) AS (VALUES {",".join(["(?,?,?)"] * len(known))}),
+    hit AS (
+        SELECT i.recipe_id, SUM(1 - k.weight) AS saved, SUM(k.mine) AS used
+        FROM (SELECT DISTINCT recipe_id, name FROM ingredient
+              WHERE name IN (SELECT name FROM k)) i
+        JOIN k USING (name)
+        GROUP BY i.recipe_id HAVING used > 0
+    )"""
+    params: list[Any] = [v for row in known for v in row]
+    where, shared_params = _shared_filters(
+        exclude=exclude,
+        tags=(tag,),
+        max_total_minutes=max_total_minutes,
+        max_prep_minutes=max_prep_minutes,
+        max_calories=max_calories,
+        min_protein_g=min_protein_g,
+        max_fat_g=max_fat_g,
+        max_carbohydrate_g=max_carbohydrate_g,
+    )
+    sql = " AND ".join(
+        [
+            "FROM hit h JOIN recipe r ON r.id = h.recipe_id WHERE r.n_ingredients - h.saved <= ?",
+            *where,
+        ]
+    )
+    params += [max_missing, *shared_params]
+    with con:
+        rows, total = _page(
+            con,
+            sql,
+            params,
+            "h.used DESC, missing_cost",
+            limit,
+            offset,
+            prefix=prefix,
+            extra=", h.used, r.n_ingredients - h.saved AS missing_cost",
+        )
+        ids = [r["id"] for r in rows]
+        detail: dict[int, dict[str, list[Any]]] = {
+            i: {"uses": [], "missing": [], "missing_basics": []} for i in ids
+        }
+        seen: set[tuple[int, str]] = set()
+        if ids:
+            marks = ",".join("?" * len(ids))
+            for rec_id, name, group in con.execute(
+                f'SELECT recipe_id, name, "group" FROM ingredient WHERE recipe_id IN ({marks}) '
+                "ORDER BY recipe_id, position",
+                ids,
+            ):
+                if (rec_id, name) in seen:
+                    continue
+                seen.add((rec_id, name))
+                if name in mine:
+                    detail[rec_id]["uses"].append(name)
+                    continue
+                weight = staples.get(name, 1.0)
+                if weight == 0:
+                    continue
+                item = {"name": name, "group": group} if group else {"name": name}
+                detail[rec_id]["missing" if weight == 1 else "missing_basics"].append(item)
+    return {
+        "total": total,
+        "next_offset": _next_offset(offset, len(rows), total),
+        "have_matches": have_matches,
+        "results": [
+            {
+                **{c: r[c] for c in _RESULT_COLUMNS},
+                "missing_cost": r["missing_cost"],
+                **detail[r["id"]],
+            }
+            for r in rows
         ],
     }
 

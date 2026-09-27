@@ -47,6 +47,9 @@ All commands accept `--data-dir` (default `./data`).
 - `search_recipes(include, exclude, text, tag, category, max_total_minutes, max_prep_minutes, max_calories, min_protein_g, max_fat_g, max_carbohydrate_g, sort, limit, offset)`
   returns compact matches. `include` matches ingredient names by whole-word
   containment (`onion` also finds `red onion`); `exclude` matches exactly.
+- `search_by_pantry(have, lacking, max_missing, ...)` ranks recipes by how much of
+  what you have they use, counting missing ingredients with staples weighted by
+  `src/fooble/staples.toml`. It takes the same filters as `search_recipes`.
 - `list_tags()` lists the tag vocabulary with recipe counts. `tag` and `category`
   both filter on it; a recipe's category is its primary tag.
 - `get_recipe(recipe_id)` returns the full record: ingredients with quantities,

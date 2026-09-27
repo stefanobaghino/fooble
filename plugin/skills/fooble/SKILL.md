@@ -5,7 +5,7 @@ description: Find recipes from fooby.ch by ingredient, time, tag (course, cuisin
 
 # Finding recipes with fooble
 
-The `fooble` MCP server indexes the English recipes of fooby.ch. Four tools:
+The `fooble` MCP server indexes the English recipes of fooby.ch. Five tools:
 
 1. `find_ingredients(query, limit, offset)`: resolve a word to the canonical ingredient names the
    index uses, with recipe counts. Names are lowercase singular nouns such as
@@ -19,20 +19,30 @@ The `fooble` MCP server indexes the English recipes of fooby.ch. Four tools:
    (id, title, category, times, serving size, nutrition, ingredient names).
    `sort` is `total_time` (default), `prep_time`, `calories`, `protein` (highest
    first) or `newest`. Nutrition is per serving, and `serving_size` says what a
-   serving is: usually a person, often a piece. Both tools page: pass the returned `next_offset` as `offset` to get
-   more, and stop when it is null. Prefer narrowing the filters to paging deep.
-3. `list_tags()`: every tag with its recipe count. Tags are a fixed lowercase
+   serving is: usually a person, often a piece.
+3. `search_by_pantry(have, lacking, max_missing, exclude, tag, max_total_minutes, max_prep_minutes, max_calories, min_protein_g, max_fat_g, max_carbohydrate_g, limit, offset)`:
+   recipes to cook from what the user has. `have` terms match like `include`.
+   Salt, pepper, water and cooking oils are assumed; basics such as butter, flour,
+   milk, lemon and stock count half when missing; `lacking` names basics the user
+   is out of. `max_missing` (default 2) caps the weighted count. Results use the
+   most of `have` first, and list `uses`, `missing` (with the recipe section, e.g.
+   "To serve") and `missing_basics`.
+4. `list_tags()`: every tag with its recipe count. Tags are a fixed lowercase
    vocabulary covering courses (`main dish`, `desserts`), diets (`vegetarian`,
    `vegan`), seasons, occasions and cuisines (`swiss cuisine`). Call it before
    filtering by `tag`; don't guess labels. `category` is the recipe's primary tag
    and filters the same way as `tag`.
-4. `get_recipe(recipe_id)`: the full recipe with quantities, steps, nutrition and
+5. `get_recipe(recipe_id)`: the full recipe with quantities, steps, nutrition and
    the fooby URL. Call it only for recipes the user wants to see in detail.
 
 ## Workflow
 
-- Turn the request into ingredients first. "Something with what's in my fridge:
-  eggs, spinach, feta" becomes `include=["egg", "spinach", "feta"]`.
+- "What can I make with what I have?" goes to `search_by_pantry`: "eggs,
+  spinach, feta and some pasta" becomes `have=["egg", "spinach", "feta",
+  "pasta"]`. Say what each suggestion is missing, and mention basics only as
+  "you probably have". Raise `max_missing` if nothing comes back.
+- "Something with spinach and feta", where every ingredient must be in the
+  dish, goes to `search_recipes(include=[...])`.
 - If a name isn't obviously canonical, confirm it with `find_ingredients`
   ("peppers" may be `bell pepper` or `chilli`). This matters most for `exclude`.
 - Use `exclude` for allergies and dislikes. Use `max_total_minutes` for
@@ -44,6 +54,9 @@ The `fooble` MCP server indexes the English recipes of fooby.ch. Four tools:
 - For courses, cuisines, seasons and occasions ("something Italian",
   "something for Christmas"), call `list_tags` and filter by the matching tag.
   Use `text` for dish names ("curry", "pasta") and for anything without a tag.
+- `find_ingredients`, `search_recipes` and `search_by_pantry` page: pass the
+  returned `next_offset` as `offset` to get more, and stop when it is null.
+  Prefer narrowing the filters to paging deep.
 - Present a shortlist of 3 to 5 titles with total time, then fetch details for
   the one the user picks. Always give the fooby URL when showing a recipe.
 - Quantities in `get_recipe` are for the stated yield; scale them if asked.
