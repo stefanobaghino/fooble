@@ -44,7 +44,7 @@ All commands accept `--data-dir` (default `./data`).
 ### MCP tools
 
 - `find_ingredients(query, limit, offset)` resolves free text to canonical ingredient names.
-- `search_recipes(include, exclude, text, category, tag, max_total_minutes, max_calories, limit, offset)`
+- `search_recipes(include, exclude, text, tag, category, max_total_minutes, max_prep_minutes, max_calories, min_protein_g, max_fat_g, max_carbohydrate_g, sort, limit, offset)`
   returns compact matches. `include` matches ingredient names by whole-word
   containment (`onion` also finds `red onion`); `exclude` matches exactly.
 - `list_tags()` lists the tag vocabulary with recipe counts. `tag` and `category`

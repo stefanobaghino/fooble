@@ -3,7 +3,7 @@ import sqlite3
 from pathlib import Path
 
 from fooble.extract import extract
-from fooble.index import build_index, db_path
+from fooble.index import build_index, db_path, published_date
 
 
 def make_data_dir(tmp_path: Path, fixtures: Path) -> Path:
@@ -65,3 +65,11 @@ def test_build_index_replaces_existing_db_atomically(tmp_path: Path, fixtures: P
     con = sqlite3.connect(db_path(data_dir))
     assert con.execute("SELECT COUNT(*) FROM recipe").fetchone() == (1,)
     assert not db_path(data_dir).with_suffix(".db.tmp").exists()
+
+
+def test_published_date():
+    assert published_date("2024-02-29") == "2024-02-29"
+    assert published_date("0017-05-13") is None
+    assert published_date("0217-01-31") is None
+    assert published_date(None) is None
+    assert published_date("") is None

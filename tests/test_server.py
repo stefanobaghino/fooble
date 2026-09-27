@@ -132,6 +132,39 @@ async def test_search_by_text_category_tag_and_limits(mcp):
     assert res["results"][0]["id"] == 1002, "shortest total time first"
 
 
+async def test_search_nutrition_filters_and_sort(mcp):
+    async def ids(**args):
+        return [r["id"] for r in (await call(mcp, "search_recipes", **args))["results"]]
+
+    assert await ids(max_prep_minutes=30) == [1001]
+    assert await ids(max_total_minutes=80) == [1002], "prep and total time differ"
+    assert await ids(min_protein_g=10) == [1001]
+    assert await ids(max_fat_g=10) == [1002]
+    assert await ids(max_carbohydrate_g=33) == [1002]
+    assert await ids(min_protein_g=10, max_fat_g=10) == []
+    assert await ids() == [1002, 1001]
+    assert await ids(sort="prep_time") == [1001, 1002]
+    assert await ids(sort="calories") == [1002, 1001]
+    assert await ids(sort="protein") == [1001, 1002]
+    assert await ids(sort="newest") == [1002, 1001]
+    with pytest.raises(ToolError):
+        await call(mcp, "search_recipes", sort="random")
+    first = (await call(mcp, "search_recipes", sort="protein", limit=1))["results"][0]
+    assert first == {
+        "id": 1001,
+        "title": "Braised beef with squash",
+        "category": "main dish",
+        "total_minutes": 90,
+        "prep_minutes": 20,
+        "serving_size": "4 person",
+        "calories": 321.0,
+        "protein_g": 15.0,
+        "fat_g": 12.0,
+        "carbohydrate_g": 34.0,
+        "ingredients": first["ingredients"],
+    }
+
+
 async def test_search_paging(mcp):
     first = await call(mcp, "search_recipes", limit=1)
     assert first["next_offset"] == 1
