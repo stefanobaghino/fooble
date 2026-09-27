@@ -38,6 +38,15 @@ def _fts_query(text: str) -> str:
     return " ".join(f'"{w}"*' for w in words if w)
 
 
+_OFFSET_DESCRIPTION = "Results to skip, for paging; pass next_offset from the previous page"
+
+
+def _next_offset(offset: int, returned: int, total: int) -> int | None:
+    """The offset of the following page, or None when this page reaches the end."""
+    end = offset + returned
+    return end if returned and end < total else None
+
+
 # Names containing any of these words are stand-ins, not the ingredient they name:
 # "vegan chicken substitute" is not chicken, "wine vinegar" is not wine.
 _STAND_IN_WORDS = frozenset({"substitute", "stabilizer", "stabiliser", "vinegar"})
@@ -79,15 +88,17 @@ def _contained_names(con: sqlite3.Connection, term: str) -> list[str]:
 def find_ingredients(
     query: Annotated[str, Field(description="Free text, e.g. 'pepper' or 'chick'")],
     limit: Annotated[int, Field(ge=1, le=50)] = 15,
-) -> list[dict[str, Any]]:
+    offset: Annotated[int, Field(ge=0, description=_OFFSET_DESCRIPTION)] = 0,
+) -> dict[str, Any]:
     """Resolve free text to canonical ingredient names used by search_recipes.
 
     Matches both canonical names and known aliases, case-insensitively, and returns how
-    many recipes use each name. Prefer the returned names when calling search_recipes.
+    many recipes use each name, best matches first. Prefer the returned names when calling
+    search_recipes. `next_offset` is set when more matches follow.
     """
     q = query.strip().lower()
     if not q:
-        return []
+        return {"total": 0, "next_offset": None, "ingredients": []}
     # Match at word starts only: "pepper" finds "bell pepper" and "peppercorns", not "gingerbread".
     patterns = (q, f"{q}%", f"% {q}%")
     with _connect() as con:
@@ -109,8 +120,12 @@ def find_ingredients(
         name = row["name"]
         return (name != q, q not in name.split(), -row["recipes"], name)
 
-    rows = sorted(rows, key=rank)[:limit]
-    return [{"name": r["name"], "recipes": r["recipes"]} for r in rows]
+    page = sorted(rows, key=rank)[offset : offset + limit]
+    return {
+        "total": len(rows),
+        "next_offset": _next_offset(offset, len(page), len(rows)),
+        "ingredients": [{"name": r["name"], "recipes": r["recipes"]} for r in page],
+    }
 
 
 @mcp.tool
@@ -139,10 +154,12 @@ def search_recipes(
     max_total_minutes: Annotated[int | None, Field(ge=0)] = None,
     max_calories: Annotated[float | None, Field(ge=0)] = None,
     limit: Annotated[int, Field(ge=1, le=100)] = 20,
+    offset: Annotated[int, Field(ge=0, description=_OFFSET_DESCRIPTION)] = 0,
 ) -> dict[str, Any]:
     """Search recipes by ingredients and other properties.
 
     All filters combine with AND. Results are compact; call get_recipe for the full record.
+    They are sorted by total time; `next_offset` is set when more results follow.
     `include` terms match by containment; `include_matches` in the result lists the canonical
     names each term matched. `exclude` names must match a canonical name exactly (see
     find_ingredients) so that nothing is hidden by accident.
@@ -184,12 +201,18 @@ def search_recipes(
         params.append(max_calories)
     sql = "FROM recipe r" + (" WHERE " + " AND ".join(where) if where else "")
     with con:
-        total = con.execute(f"SELECT COUNT(*) {sql}", params).fetchone()[0]
+        # The window count rides along with the page, saving a second pass over the matches.
         rows = con.execute(
-            f"SELECT r.id, r.title, r.category, r.total_minutes, r.calories {sql} "
-            "ORDER BY r.total_minutes IS NULL, r.total_minutes, r.id LIMIT ?",
-            [*params, limit],
+            f"SELECT r.id, r.title, r.category, r.total_minutes, r.calories, "
+            f"COUNT(*) OVER () AS total {sql} "
+            "ORDER BY r.total_minutes IS NULL, r.total_minutes, r.id LIMIT ? OFFSET ?",
+            [*params, limit, offset],
         ).fetchall()
+        if rows:
+            total = rows[0]["total"]
+        else:
+            # An empty page carries no count: nothing matched, or offset is past the end.
+            total = con.execute(f"SELECT COUNT(*) {sql}", params).fetchone()[0]
         ids = [r["id"] for r in rows]
         names: dict[int, list[str]] = {i: [] for i in ids}
         if ids:
@@ -202,6 +225,7 @@ def search_recipes(
                 names[rec_id].append(name)
     return {
         "total": total,
+        "next_offset": _next_offset(offset, len(rows), total),
         "include_matches": include_matches,
         "results": [
             {

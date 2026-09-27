@@ -46,14 +46,30 @@ async def test_list_tags(mcp):
 
 
 async def test_find_ingredients(mcp):
-    hits = await call(mcp, "find_ingredients", query="Garlic")
+    hits = (await call(mcp, "find_ingredients", query="Garlic"))["ingredients"]
     assert hits[0] == {"name": "garlic", "recipes": 1}
-    hits = await call(mcp, "find_ingredients", query="zucchini")
-    assert hits == [{"name": "courgette", "recipes": 0}]
-    assert await call(mcp, "find_ingredients", query="  ") == []
-    names = [h["name"] for h in await call(mcp, "find_ingredients", query="pepper")]
+    res = await call(mcp, "find_ingredients", query="zucchini")
+    assert res == {
+        "total": 1,
+        "next_offset": None,
+        "ingredients": [{"name": "courgette", "recipes": 0}],
+    }
+    empty = await call(mcp, "find_ingredients", query="  ")
+    assert empty == {"total": 0, "next_offset": None, "ingredients": []}
+    res = await call(mcp, "find_ingredients", query="pepper")
+    names = [h["name"] for h in res["ingredients"]]
     assert names[:2] == ["pepper", "bell pepper"]
     assert names.index("mint") > names.index("chilli"), "prefix-only match ranks last"
+
+
+async def test_find_ingredients_paging(mcp):
+    full = await call(mcp, "find_ingredients", query="pepper")
+    names = [h["name"] for h in full["ingredients"]]
+    assert len(names) >= 3 and full["next_offset"] is None
+    first = await call(mcp, "find_ingredients", query="pepper", limit=2)
+    assert first["total"] == full["total"] and first["next_offset"] == 2
+    second = await call(mcp, "find_ingredients", query="pepper", limit=2, offset=2)
+    assert [h["name"] for h in first["ingredients"] + second["ingredients"]] == names[:4]
 
 
 async def test_search_by_ingredients(mcp):
@@ -114,6 +130,18 @@ async def test_search_by_text_category_tag_and_limits(mcp):
     res = await call(mcp, "search_recipes", limit=1)
     assert res["total"] == 2 and len(res["results"]) == 1
     assert res["results"][0]["id"] == 1002, "shortest total time first"
+
+
+async def test_search_paging(mcp):
+    first = await call(mcp, "search_recipes", limit=1)
+    assert first["next_offset"] == 1
+    second = await call(mcp, "search_recipes", limit=1, offset=1)
+    assert [r["id"] for r in second["results"]] == [1001]
+    assert second["total"] == 2 and second["next_offset"] is None
+    past = await call(mcp, "search_recipes", limit=1, offset=5)
+    assert past["results"] == [] and past["total"] == 2 and past["next_offset"] is None
+    none = await call(mcp, "search_recipes", include=["zucchini"])
+    assert none["total"] == 0 and none["next_offset"] is None
 
 
 async def test_get_recipe(mcp):

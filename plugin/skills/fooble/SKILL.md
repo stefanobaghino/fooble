@@ -7,17 +7,18 @@ description: Find recipes from fooby.ch by ingredient, time, tag (course, cuisin
 
 The `fooble` MCP server indexes the English recipes of fooby.ch. Four tools:
 
-1. `find_ingredients(query)`: resolve a word to the canonical ingredient names the
+1. `find_ingredients(query, limit, offset)`: resolve a word to the canonical ingredient names the
    index uses, with recipe counts. Names are lowercase singular nouns such as
    `onion`, `bell pepper`, `chicken`, `stock`. Call it whenever you're unsure how an
    ingredient is named, or when a search returns nothing.
-2. `search_recipes(include, exclude, text, category, tag, max_total_minutes, max_calories, limit)`:
+2. `search_recipes(include, exclude, text, category, tag, max_total_minutes, max_calories, limit, offset)`:
    all filters combine with AND. `include` terms match any ingredient name that
    contains them as whole words (`onion` also finds `red onion` and `spring onion`;
    `include_matches` in the result shows what each term matched). `exclude` takes
    exact canonical names so nothing is hidden by accident. Results are compact
    (id, title, category, total minutes, calories, ingredient names), sorted by
-   total time.
+   total time. Both tools page: pass the returned `next_offset` as `offset` to get
+   more, and stop when it is null. Prefer narrowing the filters to paging deep.
 3. `list_tags()`: every tag with its recipe count. Tags are a fixed lowercase
    vocabulary covering courses (`main dish`, `desserts`), diets (`vegetarian`,
    `vegan`), seasons, occasions and cuisines (`swiss cuisine`). Call it before
