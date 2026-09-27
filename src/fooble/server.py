@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastmcp import FastMCP
 from pydantic import Field
@@ -45,6 +45,31 @@ def _next_offset(offset: int, returned: int, total: int) -> int | None:
     """The offset of the following page, or None when this page reaches the end."""
     end = offset + returned
     return end if returned and end < total else None
+
+
+# Each sort has a fixed direction; unknown values go last and ties break by id, so pages are
+# stable under any sort.
+_ORDER_BY = {
+    "total_time": "r.total_minutes IS NULL, r.total_minutes",
+    "prep_time": "r.prep_minutes IS NULL, r.prep_minutes",
+    "calories": "r.calories IS NULL, r.calories",
+    "protein": "r.protein_g IS NULL, r.protein_g DESC",
+    "newest": "r.published IS NULL, r.published DESC",
+}
+Sort = Literal["total_time", "prep_time", "calories", "protein", "newest"]
+_PER_SERVING = "per serving; see serving_size in results"
+_RESULT_COLUMNS = (
+    "id",
+    "title",
+    "category",
+    "total_minutes",
+    "prep_minutes",
+    "serving_size",
+    "calories",
+    "protein_g",
+    "fat_g",
+    "carbohydrate_g",
+)
 
 
 # Names containing any of these words are stand-ins, not the ingredient they name:
@@ -151,15 +176,31 @@ def search_recipes(
         str | None,
         Field(description="Same as tag: a recipe's category is its primary tag. Prefer tag."),
     ] = None,
-    max_total_minutes: Annotated[int | None, Field(ge=0)] = None,
-    max_calories: Annotated[float | None, Field(ge=0)] = None,
+    max_total_minutes: Annotated[
+        int | None, Field(ge=0, description="Including resting, marinating and baking")
+    ] = None,
+    max_prep_minutes: Annotated[int | None, Field(ge=0, description="Hands-on time only")] = None,
+    max_calories: Annotated[float | None, Field(ge=0, description=f"kcal {_PER_SERVING}")] = None,
+    min_protein_g: Annotated[float | None, Field(ge=0, description=f"Grams {_PER_SERVING}")] = None,
+    max_fat_g: Annotated[float | None, Field(ge=0, description=f"Grams {_PER_SERVING}")] = None,
+    max_carbohydrate_g: Annotated[
+        float | None, Field(ge=0, description=f"Grams {_PER_SERVING}")
+    ] = None,
+    sort: Annotated[
+        Sort,
+        Field(
+            description="total_time, prep_time and calories sort lowest first; protein highest "
+            "first; newest by publication date"
+        ),
+    ] = "total_time",
     limit: Annotated[int, Field(ge=1, le=100)] = 20,
     offset: Annotated[int, Field(ge=0, description=_OFFSET_DESCRIPTION)] = 0,
 ) -> dict[str, Any]:
     """Search recipes by ingredients and other properties.
 
     All filters combine with AND. Results are compact; call get_recipe for the full record.
-    They are sorted by total time; `next_offset` is set when more results follow.
+    `next_offset` is set when more results follow. Nutrition is per serving, and a serving
+    is whatever `serving_size` says: usually a person, often a piece, sometimes a glass.
     `include` terms match by containment; `include_matches` in the result lists the canonical
     names each term matched. `exclude` names must match a canonical name exactly (see
     find_ingredients) so that nothing is hidden by accident.
@@ -196,16 +237,23 @@ def search_recipes(
     if max_total_minutes is not None:
         where.append("r.total_minutes <= ?")
         params.append(max_total_minutes)
-    if max_calories is not None:
-        where.append("r.calories <= ?")
-        params.append(max_calories)
+    for column, op, value in (
+        ("prep_minutes", "<=", max_prep_minutes),
+        ("calories", "<=", max_calories),
+        ("protein_g", ">=", min_protein_g),
+        ("fat_g", "<=", max_fat_g),
+        ("carbohydrate_g", "<=", max_carbohydrate_g),
+    ):
+        if value is not None:
+            where.append(f"r.{column} {op} ?")
+            params.append(value)
     sql = "FROM recipe r" + (" WHERE " + " AND ".join(where) if where else "")
     with con:
         # The window count rides along with the page, saving a second pass over the matches.
         rows = con.execute(
-            f"SELECT r.id, r.title, r.category, r.total_minutes, r.calories, "
+            f"SELECT {', '.join('r.' + c for c in _RESULT_COLUMNS)}, "
             f"COUNT(*) OVER () AS total {sql} "
-            "ORDER BY r.total_minutes IS NULL, r.total_minutes, r.id LIMIT ? OFFSET ?",
+            f"ORDER BY {_ORDER_BY[sort]}, r.id LIMIT ? OFFSET ?",
             [*params, limit, offset],
         ).fetchall()
         if rows:
@@ -228,15 +276,7 @@ def search_recipes(
         "next_offset": _next_offset(offset, len(rows), total),
         "include_matches": include_matches,
         "results": [
-            {
-                "id": r["id"],
-                "title": r["title"],
-                "category": r["category"],
-                "total_minutes": r["total_minutes"],
-                "calories": r["calories"],
-                "ingredients": names[r["id"]],
-            }
-            for r in rows
+            {**{c: r[c] for c in _RESULT_COLUMNS}, "ingredients": names[r["id"]]} for r in rows
         ],
     }
 

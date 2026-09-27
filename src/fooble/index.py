@@ -62,6 +62,15 @@ CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 """
 
 
+def published_date(value: str | None) -> str | None:
+    """The publication date, or None when it is missing or implausible.
+
+    A few pages carry typos such as "0017-05-13"; kept, they would top an oldest-first order
+    and sink to the bottom of a newest-first one.
+    """
+    return value if value and value[:4] >= "2000" else None
+
+
 def db_path(data_dir: Path) -> Path:
     return data_dir / "fooble.db"
 
@@ -99,7 +108,7 @@ def build_index(data_dir: Path) -> int:
                 nut.get("fat_g"),
                 nut.get("carbohydrate_g"),
                 nut.get("protein_g"),
-                r.get("published"),
+                published_date(r.get("published")),
                 json.dumps(r, ensure_ascii=False),
             ),
         )
