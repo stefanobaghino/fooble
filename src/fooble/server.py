@@ -343,6 +343,13 @@ def search_by_pantry(
             "it as whole words, as in search_recipes include."
         ),
     ],
+    use_up: Annotated[
+        list[str] | None,
+        Field(
+            description="Ingredients to use up first, e.g. ones about to expire. Matched like "
+            "`have`; recipes using more of them rank first."
+        ),
+    ] = None,
     lacking: Annotated[
         list[str] | None,
         Field(description="Staples the cook is out of, e.g. 'butter'; they count as missing"),
@@ -366,17 +373,28 @@ def search_by_pantry(
 
     Salt, pepper, water and cooking oils are assumed present. Basics such as butter, flour,
     milk, lemon and stock are probably present: a missing one counts half. Everything else
-    counts one. Results use the most of `have` first, then need the least; each lists what
-    it uses, what is missing (with its group, e.g. 'To serve') and which basics it needs.
-    Other filters work as in search_recipes; `next_offset` is set when more results follow.
+    counts one. Results use the most of `use_up`, then of `have` and `use_up` together, then
+    need the least; each lists what it uses, what is missing (with its group, e.g. 'To
+    serve') and which basics it needs. Other filters work as in search_recipes;
+    `next_offset` is set when more results follow.
     """
     con = _connect()
-    have_matches: dict[str, list[str]] = {}
-    for term in have:
-        term = term.strip().lower()
-        if term:
-            have_matches[term] = _contained_names(con, term)
-    mine = {n for names in have_matches.values() for n in names}
+
+    def matches(terms: list[str]) -> dict[str, list[str]]:
+        out: dict[str, list[str]] = {}
+        for term in terms:
+            term = term.strip().lower()
+            if term:
+                out[term] = _contained_names(con, term)
+        return out
+
+    have_matches = matches(have)
+    use_up_matches = matches(use_up or [])
+    urgent = {n for names in use_up_matches.values() for n in names}
+    mine = urgent | {n for names in have_matches.values() for n in names}
+    echo = {"have_matches": have_matches}
+    if use_up is not None:
+        echo["use_up_matches"] = use_up_matches
     out_of = {x.strip().lower() for x in lacking or []}
     staples = {
         r["name"]: r["weight"]
@@ -384,14 +402,18 @@ def search_by_pantry(
         if r["name"] not in mine and r["name"] not in out_of
     }
     if not mine:
-        return {"total": 0, "next_offset": None, "have_matches": have_matches, "results": []}
+        return {"total": 0, "next_offset": None, **echo, "results": []}
     # k lists every name that lowers a recipe's missing count: the cook's own (weight 0,
-    # counted as used) and the staples (their weight). Starting from the name index keeps
-    # the scan to recipes that use at least one of them.
-    known = [(n, 0.0, 1) for n in sorted(mine)] + [(n, w, 0) for n, w in sorted(staples.items())]
-    prefix = f"""WITH k(name, weight, mine) AS (VALUES {",".join(["(?,?,?)"] * len(known))}),
+    # counted as used, and as urgent if in use_up) and the staples (their weight).
+    # Starting from the name index keeps the scan to recipes that use at least one of them.
+    known = [(n, 0.0, 1, int(n in urgent)) for n in sorted(mine)] + [
+        (n, w, 0, 0) for n, w in sorted(staples.items())
+    ]
+    rows_sql = ",".join(["(?,?,?,?)"] * len(known))
+    prefix = f"""WITH k(name, weight, mine, urgent) AS (VALUES {rows_sql}),
     hit AS (
-        SELECT i.recipe_id, SUM(1 - k.weight) AS saved, SUM(k.mine) AS used
+        SELECT i.recipe_id, SUM(1 - k.weight) AS saved, SUM(k.mine) AS used,
+               SUM(k.urgent) AS used_up
         FROM (SELECT DISTINCT recipe_id, name FROM ingredient
               WHERE name IN (SELECT name FROM k)) i
         JOIN k USING (name)
@@ -420,7 +442,7 @@ def search_by_pantry(
             con,
             sql,
             params,
-            "h.used DESC, missing_cost",
+            "h.used_up DESC, h.used DESC, missing_cost",
             limit,
             offset,
             prefix=prefix,
@@ -452,12 +474,17 @@ def search_by_pantry(
     return {
         "total": total,
         "next_offset": _next_offset(offset, len(rows), total),
-        "have_matches": have_matches,
+        **echo,
         "results": [
             {
                 **{c: r[c] for c in _RESULT_COLUMNS},
                 "missing_cost": r["missing_cost"],
                 **detail[r["id"]],
+                **(
+                    {"uses_up": [n for n in detail[r["id"]]["uses"] if n in urgent]}
+                    if use_up is not None
+                    else {}
+                ),
             }
             for r in rows
         ],

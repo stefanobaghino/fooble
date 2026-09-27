@@ -1,6 +1,6 @@
 {
   "name": "fooble",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Find fooby.ch recipes by ingredient, by what's in your fridge, or by time, nutrition, course and cuisine, through a fooble MCP server.",
   "author": {
     "name": "Stefano Baghino",
