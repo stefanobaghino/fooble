@@ -1,4 +1,5 @@
 import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -105,6 +106,39 @@ def test_crawl_does_not_count_404_as_failure(tmp_path: Path, monkeypatch):
 
     results = list(crawl(tmp_path, client=fake_client(handler)))
     assert [status for _, status in results] == [404, 404]
+
+
+def test_crawl_skips_recently_gone_pages_for_a_week(tmp_path: Path):
+    requested: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/sitemap.xml":
+            return httpx.Response(200, text=SITEMAP)
+        requested.append(request.url.path)
+        return httpx.Response(404 if "18457" in request.url.path else 410)
+
+    client = fake_client(handler)
+    t0 = datetime.now(UTC)
+    assert [s for _, s in crawl(tmp_path, client=client, now=t0)] == [410, 404]
+    assert list(crawl(tmp_path, client=client, now=t0 + timedelta(days=6))) == []
+    assert [
+        r for r, _ in crawl(tmp_path, refresh=True, client=client, now=t0 + timedelta(days=6))
+    ] == [27468, 18457]
+    requested.clear()
+    assert [r for r, _ in crawl(tmp_path, client=client, now=t0 + timedelta(days=8))] == [
+        27468,
+        18457,
+    ]
+    assert len(requested) == 2
+
+
+def test_crawl_retries_gone_page_whose_last_answer_was_not_gone(tmp_path: Path):
+    cache = Cache(tmp_path)
+    cache.record(id=18457, status=404)
+    cache.record(id=18457, status=503)
+    assert cache.recently_gone(datetime.now(UTC)) == set()
+    cache.record(id=18457, status=404)
+    assert cache.recently_gone(datetime.now(UTC)) == {18457}
 
 
 def test_client_retries_on_server_error(monkeypatch):

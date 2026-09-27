@@ -7,7 +7,7 @@ import logging
 import re
 import time
 from collections.abc import Iterable, Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -26,6 +26,10 @@ TIMEOUT = 30.0
 SITEMAP_TIMEOUT = 300.0
 SITEMAP_MAX_AGE = 24 * 3600
 MAX_CONSECUTIVE_FAILURES = 5
+# A recipe the sitemap lists but the site answers 404 or 410 for is retried
+# only this long after the last such answer, in case it gets published.
+GONE_STATUSES = (404, 410)
+GONE_RETRY_AFTER = timedelta(days=7)
 
 
 def recipe_urls_from_sitemap(xml: str) -> dict[int, str]:
@@ -59,6 +63,21 @@ class Cache:
         tmp = self.path(recipe_id).with_suffix(".tmp")
         tmp.write_text(html, encoding="utf-8")
         tmp.replace(self.path(recipe_id))
+
+    def recently_gone(self, now: datetime) -> set[int]:
+        """Ids whose last fetch answered 404 or 410 less than GONE_RETRY_AFTER ago."""
+        last: dict[int, dict] = {}
+        if self.log_path.exists():
+            with self.log_path.open(encoding="utf-8") as f:
+                for line in f:
+                    entry = json.loads(line)
+                    last[entry["id"]] = entry
+        return {
+            rid
+            for rid, e in last.items()
+            if e.get("status") in GONE_STATUSES
+            and now - datetime.fromisoformat(e["ts"]) < GONE_RETRY_AFTER
+        }
 
     def record(self, **entry: object) -> None:
         entry = {"ts": datetime.now(UTC).isoformat(timespec="seconds"), **entry}
@@ -116,14 +135,21 @@ def crawl(
     refresh: bool = False,
     only: Iterable[int] | None = None,
     client: Client | None = None,
+    now: datetime | None = None,
 ) -> Iterator[tuple[int, int]]:
-    """Fetch recipe pages not yet cached. Yields (recipe_id, status) per fetch."""
+    """Fetch recipe pages not yet cached. Yields (recipe_id, status) per fetch.
+
+    Pages that recently answered 404 or 410 are skipped unless refreshing.
+    """
     client = client or Client()
     cache = Cache(data_dir)
     urls = recipe_urls_from_sitemap(client.sitemap(data_dir / "sitemap.xml"))
     log.info("sitemap lists %d English recipes", len(urls))
 
-    todo = [rid for rid in urls if refresh or not cache.has(rid)]
+    gone = set() if refresh else cache.recently_gone(now or datetime.now(UTC))
+    todo = [rid for rid in urls if refresh or not (cache.has(rid) or rid in gone)]
+    if skipped := len(gone & urls.keys()):
+        log.info("skipping %d recipes that were recently not found", skipped)
     if only is not None:
         wanted = set(only)
         todo = [rid for rid in todo if rid in wanted]
