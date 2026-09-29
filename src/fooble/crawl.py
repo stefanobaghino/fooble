@@ -7,7 +7,7 @@ import logging
 import re
 import time
 from collections.abc import Iterable, Iterator
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
@@ -27,9 +27,11 @@ SITEMAP_TIMEOUT = 300.0
 SITEMAP_MAX_AGE = 24 * 3600
 MAX_CONSECUTIVE_FAILURES = 5
 # A recipe the sitemap lists but the site answers 404 or 410 for is retried
-# only this long after the last such answer, in case it gets published.
+# only this many calendar days (UTC) after the last such answer, in case it
+# gets published. Counting days rather than hours keeps the retry on the same
+# night whatever time within the night each crawl reaches the recipe.
 GONE_STATUSES = (404, 410)
-GONE_RETRY_AFTER = timedelta(days=7)
+GONE_RETRY_DAYS = 7
 
 
 def recipe_urls_from_sitemap(xml: str) -> dict[int, str]:
@@ -65,7 +67,7 @@ class Cache:
         tmp.replace(self.path(recipe_id))
 
     def recently_gone(self, now: datetime) -> set[int]:
-        """Ids whose last fetch answered 404 or 410 less than GONE_RETRY_AFTER ago."""
+        """Ids whose last fetch answered 404 or 410 fewer than GONE_RETRY_DAYS days ago."""
         last: dict[int, dict] = {}
         if self.log_path.exists():
             with self.log_path.open(encoding="utf-8") as f:
@@ -76,7 +78,7 @@ class Cache:
             rid
             for rid, e in last.items()
             if e.get("status") in GONE_STATUSES
-            and now - datetime.fromisoformat(e["ts"]) < GONE_RETRY_AFTER
+            and (now.date() - datetime.fromisoformat(e["ts"]).date()).days < GONE_RETRY_DAYS
         }
 
     def record(self, **entry: object) -> None:
