@@ -132,6 +132,21 @@ def test_crawl_skips_recently_gone_pages_for_a_week(tmp_path: Path):
     assert len(requested) == 2
 
 
+def test_recently_gone_counts_calendar_days(tmp_path: Path):
+    cache = Cache(tmp_path)
+    cache.record(id=1, status=404, ts="2026-09-21T01:21:26+00:00")
+
+    def gone(ts: str) -> bool:
+        return 1 in cache.recently_gone(datetime.fromisoformat(ts))
+
+    # The next week's crawl started 16 minutes earlier in the night: still due.
+    assert not gone("2026-09-28T01:05:01+00:00")
+    assert gone("2026-09-27T01:59:00+00:00")
+    # A manual daytime crawl, then the nightly one: days count, not hours.
+    cache.record(id=2, status=404, ts="2026-09-21T14:00:00+00:00")
+    assert 2 not in cache.recently_gone(datetime.fromisoformat("2026-09-28T01:00:00+00:00"))
+
+
 def test_crawl_retries_gone_page_whose_last_answer_was_not_gone(tmp_path: Path):
     cache = Cache(tmp_path)
     cache.record(id=18457, status=404)
